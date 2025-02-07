@@ -1,0 +1,4 @@
+bases:
+  - github.com/adipurnamk/landing-page/deployment/base?ref=main
+patchesStrategicMerge:
+  - patch.yaml
