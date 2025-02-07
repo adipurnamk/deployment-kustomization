@@ -12,6 +12,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # Add filter step to check which environment directories have changes
+      - name: Filter paths for environments
+        id: filter_paths
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            dev:
+              - 'dev/**'
+            stage:
+              - 'stage/**'
+            prod:
+              - 'prod/**'
+      
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -19,9 +32,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Update kubeconfig for EKS
-        run: aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER }}
-
+      # Install kustomize (shared for all environments)
       - name: Install kustomize
         run: |
           wget https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv4.5.7/kustomize_v4.5.7_linux_amd64.tar.gz
@@ -29,8 +40,23 @@ jobs:
           chmod +x kustomize
           sudo mv kustomize /usr/local/bin/
 
-      - name: Generate kustomization output
-        run: kustomize build .
+      # Deploy Dev environment if changes detected
+      - name: Deploy Dev environment
+        if: steps.filter_paths.outputs.dev == 'true'
+        run: |
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_DEV }}
+          kustomize build dev | kubectl apply -f -
 
-      - name: Deploy to EKS
-        run: kubectl apply -k .
+      # Deploy Stage environment if changes detected
+      - name: Deploy Stage environment
+        if: steps.filter_paths.outputs.stage == 'true'
+        run: |
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_STAGE }}
+          kustomize build stage | kubectl apply -f -
+
+      # Deploy Prod environment if changes detected
+      - name: Deploy Prod environment
+        if: steps.filter_paths.outputs.prod == 'true'
+        run: |
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_PROD }}
+          kustomize build prod | kubectl apply -f -
